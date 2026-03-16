@@ -52,9 +52,9 @@ fun DetailScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Primary,
-                    titleContentColor = Card,
-                    navigationIconContentColor = Card,
-                    actionIconContentColor = Card
+                    titleContentColor = CardBackground,
+                    navigationIconContentColor = CardBackground,
+                    actionIconContentColor = CardBackground
                 )
             )
         }
@@ -138,12 +138,12 @@ fun PremiumCard(premiumRate: Double?) {
                 text = premiumRate?.let { "%+.2f%%".format(it) } ?: "-%",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = Card
+                color = CardBackground
             )
             Text(
                 text = "溢价率",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Card.copy(alpha = 0.8f)
+                color = CardBackground.copy(alpha = 0.8f)
             )
         }
     }
@@ -154,7 +154,7 @@ fun InfoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Card)
+        colors = CardDefaults.cardColors(containerColor = CardBackground)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(

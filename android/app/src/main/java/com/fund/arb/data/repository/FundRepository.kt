@@ -238,4 +238,6 @@ class FundRepository @Inject constructor(
     suspend fun isInWatchlist(code: String): Boolean = watchlistDao.isWatched(code)
 
     suspend fun getLastUpdateTime(): Long? = fundDataDao.getLastUpdateTime()
+
+    suspend fun getAllFundsSync(): List<FundDataEntity> = fundDataDao.getAllFundsSync()
 }

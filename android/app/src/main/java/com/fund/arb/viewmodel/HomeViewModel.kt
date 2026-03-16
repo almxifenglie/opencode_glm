@@ -83,13 +83,16 @@ class HomeViewModel @Inject constructor(
     }
     
     fun setFilter(minPremium: Double, onlyOpenPurchase: Boolean) {
-        viewModelScope.update { state ->
-            val filteredFunds = filterFunds(state.funds, minPremium, onlyOpenPurchase)
-            state.copy(
-                minPremium = minPremium, 
-                onlyOpenPurchase = onlyOpenPurchase,
-                funds = filteredFunds
-            )
+        viewModelScope.launch {
+            val currentFunds = repository.getAllFundsSync()
+            _uiState.update { state ->
+                val filteredFunds = filterFunds(currentFunds, minPremium, onlyOpenPurchase)
+                state.copy(
+                    minPremium = minPremium, 
+                    onlyOpenPurchase = onlyOpenPurchase,
+                    funds = filteredFunds
+                )
+            }
         }
     }
 }

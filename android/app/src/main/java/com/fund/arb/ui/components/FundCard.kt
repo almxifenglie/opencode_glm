@@ -165,7 +165,7 @@ fun PurchaseTag(isOpen: Boolean) {
             text = if (isOpen) "可申购" else "暂停申购",
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = Card
+            color = CardBackground
         )
     }
 }

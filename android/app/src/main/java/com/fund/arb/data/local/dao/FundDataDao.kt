@@ -35,4 +35,7 @@ interface FundDataDao {
 
     @Query("SELECT MAX(updateTime) FROM fund_data")
     suspend fun getLastUpdateTime(): Long?
+
+    @Query("SELECT * FROM fund_data ORDER BY premiumRate DESC")
+    suspend fun getAllFundsSync(): List<FundDataEntity>
 }
