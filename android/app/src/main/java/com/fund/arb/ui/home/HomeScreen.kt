@@ -101,7 +101,7 @@ fun FilterBar(
                 label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Primary,
-                    selectedLabelColor = Card
+                    selectedLabelColor = CardBackground
                 )
             )
         }

@@ -14,7 +14,7 @@ data class HomeUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val minPremium: Double = 0.0,
-    val onlyOpenPurchase: Boolean = true,
+    val onlyOpenPurchase: Boolean = false,
     val refreshingCode: String? = null,
     val lastUpdateTime: Long? = null
 )
@@ -33,17 +33,16 @@ class HomeViewModel @Inject constructor(
     
     private fun loadFunds() {
         viewModelScope.launch {
-            repository.getAllFunds()
-                .combine(repository.getLastUpdateTime().let { flowOf(it) }) { funds, time ->
-                    _uiState.update { state ->
-                        val filteredFunds = filterFunds(funds, state.minPremium, state.onlyOpenPurchase)
-                        state.copy(
-                            funds = filteredFunds,
-                            lastUpdateTime = time
-                        )
-                    }
+            repository.getAllFunds().collect { funds ->
+                val time = repository.getLastUpdateTime()
+                _uiState.update { state ->
+                    val filteredFunds = filterFunds(funds, state.minPremium, state.onlyOpenPurchase)
+                    state.copy(
+                        funds = filteredFunds,
+                        lastUpdateTime = time
+                    )
                 }
-                .launchIn(viewModelScope)
+            }
         }
     }
     
@@ -84,6 +83,13 @@ class HomeViewModel @Inject constructor(
     }
     
     fun setFilter(minPremium: Double, onlyOpenPurchase: Boolean) {
-        _uiState.update { it.copy(minPremium = minPremium, onlyOpenPurchase = onlyOpenPurchase) }
+        viewModelScope.update { state ->
+            val filteredFunds = filterFunds(state.funds, minPremium, onlyOpenPurchase)
+            state.copy(
+                minPremium = minPremium, 
+                onlyOpenPurchase = onlyOpenPurchase,
+                funds = filteredFunds
+            )
+        }
     }
 }

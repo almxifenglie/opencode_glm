@@ -6,9 +6,9 @@ import androidx.compose.runtime.Composable
 
 private val LightColorScheme = lightColorScheme(
     primary = Primary,
-    onPrimary = Card,
+    onPrimary = CardBackground,
     background = Background,
-    surface = Card,
+    surface = CardBackground,
     onSurface = TextPrimary,
     onBackground = TextPrimary
 )

@@ -25,7 +25,7 @@ fun FundCard(
             .padding(horizontal = 12.dp, vertical = 6.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Card),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -134,7 +134,7 @@ fun PremiumBadge(premiumRate: Double?) {
             text = premiumRate?.let { "%+.2f%%".format(it) } ?: "-%",
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelLarge,
-            color = Card,
+            color = CardBackground,
             fontWeight = FontWeight.Bold
         )
     }
