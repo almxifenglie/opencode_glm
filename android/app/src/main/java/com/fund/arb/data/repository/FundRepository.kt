@@ -221,35 +221,24 @@ class FundRepository @Inject constructor(
         try {
             val existingFund = fundDataDao.getFundByCode(code) ?: return@withContext Result.success(null)
             
-            if (existingFund.type == "QDII") {
-                val qdiiFunds = fetchQDII()
-                val updatedFund = qdiiFunds.find { it.code == code }
-                if (updatedFund != null) {
-                    fundDataDao.updateFund(updatedFund)
-                    premiumHistoryDao.insert(PremiumHistoryEntity(
-                        code = updatedFund.code,
-                        premiumRate = updatedFund.premiumRate,
-                        nav = updatedFund.navT1,
-                        price = updatedFund.price
-                    ))
-                    return@withContext Result.success(updatedFund)
-                }
+            val updatedFund = if (existingFund.type == "QDII") {
+                fetchQDII().find { it.code == code }
             } else {
-                val lofFunds = fetchLOF()
-                val updatedFund = lofFunds.find { it.code == code }
-                if (updatedFund != null) {
-                    fundDataDao.updateFund(updatedFund)
-                    premiumHistoryDao.insert(PremiumHistoryEntity(
-                        code = updatedFund.code,
-                        premiumRate = updatedFund.premiumRate,
-                        nav = updatedFund.navT1,
-                        price = updatedFund.price
-                    ))
-                    return@withContext Result.success(updatedFund)
-                }
+                fetchLOF().find { it.code == code }
             }
             
-            Result.success(existingFund)
+            if (updatedFund != null) {
+                fundDataDao.updateFund(updatedFund)
+                premiumHistoryDao.insert(PremiumHistoryEntity(
+                    code = updatedFund.code,
+                    premiumRate = updatedFund.premiumRate,
+                    nav = updatedFund.navT1,
+                    price = updatedFund.price
+                ))
+                Result.success(updatedFund)
+            } else {
+                Result.success(existingFund)
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
