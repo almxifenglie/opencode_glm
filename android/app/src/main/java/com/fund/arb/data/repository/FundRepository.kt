@@ -115,8 +115,7 @@ class FundRepository @Inject constructor(
             throw Exception("API失败: ${response.code()} ${response.message()}")
         }
         
-        val body = response.body()
-            ?: throw Exception("响应体为空")
+        val body = response.body() ?: throw Exception("响应体为空")
         
         if (body.rows.isEmpty()) {
             throw Exception("数据为空")
@@ -124,7 +123,7 @@ class FundRepository @Inject constructor(
         
         println("QDII API success, found ${body.rows.size} items")
         
-        val funds = body.rows.mapNotNull { item ->
+        return body.rows.mapNotNull { item ->
             val code = item.fundId ?: return@mapNotNull null
             val name = item.fundNm ?: return@mapNotNull null
             
@@ -145,9 +144,6 @@ class FundRepository @Inject constructor(
                 updateTime = System.currentTimeMillis()
             )
         }
-        
-        println("Successfully parsed ${funds.size} QDII funds")
-        funds
     }
     
     private suspend fun fetchLOF(): List<FundDataEntity> {
@@ -158,8 +154,7 @@ class FundRepository @Inject constructor(
             throw Exception("API失败: ${response.code()} ${response.message()}")
         }
         
-        val body = response.body()
-            ?: throw Exception("响应体为空")
+        val body = response.body() ?: throw Exception("响应体为空")
         
         if (body.isEmpty()) {
             throw Exception("数据为空")
@@ -167,15 +162,14 @@ class FundRepository @Inject constructor(
         
         val funds = parseLOFResponse(body)
         println("Successfully parsed ${funds.size} LOF funds")
-        funds
+        return funds
     }
     
     private fun parseLOFResponse(html: String): List<FundDataEntity> {
         val funds = mutableListOf<FundDataEntity>()
         
         val dataPattern = """datas:(\[.*?\])""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val match = dataPattern.find(html)
-            ?: throw Exception("无法解析数据格式")
+        val match = dataPattern.find(html) ?: throw Exception("无法解析数据格式")
         
         val dataArray = match.groupValues[1]
         val itemPattern = """"([^"]*)"""".toRegex()
@@ -207,7 +201,7 @@ class FundRepository @Inject constructor(
             i += 23
         }
         
-        funds
+        return funds
     }
 
     private suspend fun savePremiumHistory(funds: List<FundDataEntity>) {
