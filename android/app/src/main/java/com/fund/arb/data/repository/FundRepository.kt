@@ -3,6 +3,8 @@ package com.fund.arb.data.repository
 import com.fund.arb.data.local.dao.*
 import com.fund.arb.data.local.entity.*
 import com.fund.arb.data.remote.api.*
+import com.fund.arb.data.remote.model.QDIIResponse
+import com.fund.arb.data.remote.model.QDIIItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -106,23 +108,23 @@ class FundRepository @Inject constructor(
             
             println("QDII API success, found ${body.rows.size} items")
             
-            val funds = body.rows.mapNotNull { item ->
-                val code = item.fund_id ?: return@mapNotNull null
-                val name = item.fund_nm ?: return@mapNotNull null
+val funds = body.rows.mapNotNull { item ->
+                val code = item.fundId ?: return@mapNotNull null
+                val name = item.fundNm ?: return@mapNotNull null
                 
                 FundDataEntity(
                     code = code,
                     name = name,
                     type = "QDII",
                     price = item.price,
-                    changePct = item.getChangePct(),
+                    changePct = item.getPremiumRate(),
                     premiumRate = item.getPremiumRate(),
                     navT1 = item.nav,
                     navEstimate = null,
                     purchaseStatus = null,
                     purchaseLimit = null,
-                    volume = item.fund_vol,
-                    amount = item.fund_amt,
+                    volume = item.fundVol,
+                    amount = item.fundAmt,
                     source = "jisilu",
                     updateTime = System.currentTimeMillis()
                 )
