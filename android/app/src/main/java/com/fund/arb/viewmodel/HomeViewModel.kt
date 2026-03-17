@@ -29,6 +29,7 @@ class HomeViewModel @Inject constructor(
     
     init {
         loadFunds()
+        refreshAllIfNeeded()
     }
     
     private fun loadFunds() {
@@ -42,6 +43,19 @@ class HomeViewModel @Inject constructor(
                         lastUpdateTime = time
                     )
                 }
+            }
+        }
+    }
+    
+    private fun refreshAllIfNeeded() {
+        viewModelScope.launch {
+            val lastUpdate = repository.getLastUpdateTime()
+            val now = System.currentTimeMillis()
+            
+            if (lastUpdate == null || (now - lastUpdate) > 5 * 60 * 1000) {
+                _uiState.update { it.copy(isLoading = true) }
+                repository.refreshAllData()
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
