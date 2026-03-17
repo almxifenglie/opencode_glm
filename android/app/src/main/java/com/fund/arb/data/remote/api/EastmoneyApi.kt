@@ -1,6 +1,5 @@
 package com.fund.arb.data.remote.api
 
-import com.fund.arb.data.remote.model.*
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -17,22 +16,7 @@ interface EastmoneyApi {
         @Query("qdii") qdii: String = "",
         @Query("tabSubtype") tabSubtype: String = ",,,,,",
         @Query("pi") pi: Int = 1,
-        @Query("pn") pn: Int = 50,
+        @Query("pn") pn: Int = 100,
         @Query("dx") dx: Int = 1
-    ): Response<String>
-
-    @GET("https://fund.eastmoney.com/tzzs/api_fundrules.ashx")
-    suspend fun getPurchaseStatus(
-        @Query("fc") fundCode: String,
-        @Query("token") token: String = "fundeastmoney"
-    ): Response<PurchaseResponse>
-
-    @GET("https://fund.eastmoney.com/f10/F10Data.aspx")
-    suspend fun getNavHistory(
-        @Query("code") code: String,
-        @Query("year") year: Int,
-        @Query("sdate") sdate: String = "",
-        @Query("edate") edate: String = "",
-        @Query("per") per: Int = 30
     ): Response<String>
 }

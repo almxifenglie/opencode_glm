@@ -3,35 +3,18 @@ package com.fund.arb.data.repository
 import com.fund.arb.data.local.dao.*
 import com.fund.arb.data.local.entity.*
 import com.fund.arb.data.remote.api.*
-import com.fund.arb.data.remote.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.converter.scalars.ScalarsConverterFactory
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-
-data class FundItem(
-    val code: String,
-    val name: String,
-    val type: String,
-    val price: Double?,
-    val changePct: Double?,
-    val premiumRate: Double?,
-    val navT1: Double?,
-    val navEstimate: Double?,
-    val purchaseStatus: String?,
-    val purchaseLimit: Double?,
-    val volume: Double?,
-    val amount: Double?,
-    val source: String?,
-    val updateTime: Long
-)
 
 @Singleton
 class FundRepository @Inject constructor(
@@ -50,20 +33,22 @@ class FundRepository @Inject constructor(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    // 后端API地址 - 可以修改为你的服务器地址
-    private var backendUrl = "http://192.168.1.100:8000"  // 默认本地网络地址
-    
-    private val backendApi: BackendApi by lazy {
+    private val jisiluApi: JisiluApi by lazy {
         Retrofit.Builder()
-            .baseUrl(backendUrl)
+            .baseUrl("https://www.jisilu.cn/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
-            .create(BackendApi::class.java)
+            .create(JisiluApi::class.java)
     }
     
-    fun setBackendUrl(url: String) {
-        backendUrl = url
+    private val eastmoneyApi: EastmoneyApi by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://fund.eastmoney.com/")
+            .client(okHttpClient)
+            .addConverterFactory(ScalarsConverterFactory.create())
+            .build()
+            .create(EastmoneyApi::class.java)
     }
 
     fun getAllFunds(): Flow<List<FundDataEntity>> = fundDataDao.getAllFunds()
@@ -88,10 +73,11 @@ class FundRepository @Inject constructor(
             
             println("Total funds to save: ${allFunds.size}")
             
-            fundDataDao.deleteAll()
-            fundDataDao.insertFunds(allFunds)
-            
-            savePremiumHistory(allFunds)
+            if (allFunds.isNotEmpty()) {
+                fundDataDao.deleteAll()
+                fundDataDao.insertFunds(allFunds)
+                savePremiumHistory(allFunds)
+            }
             
             println("refreshAllData completed successfully")
             Result.success(Unit)
@@ -104,92 +90,132 @@ class FundRepository @Inject constructor(
 
     private suspend fun fetchQDII(): List<FundDataEntity> {
         return try {
-            println("Fetching QDII data from backend: $backendUrl")
-            val response = backendApi.getQDIIRanking()
+            println("Fetching QDII data from jisilu...")
+            val response = jisiluApi.getQDIIList()
             
             if (!response.isSuccessful) {
                 println("QDII API failed: ${response.code()} - ${response.message()}")
-                return getDemoData("QDII")  // 返回演示数据
+                return getDemoData("QDII")
             }
             
             val body = response.body()
-            if (body == null || body.items.isEmpty()) {
+            if (body == null || body.rows.isEmpty()) {
                 println("QDII API returned empty body, using demo data")
                 return getDemoData("QDII")
             }
             
-            println("QDII API success, found ${body.items.size} items")
+            println("QDII API success, found ${body.rows.size} items")
             
-            body.items.map { item ->
+            val funds = body.rows.mapNotNull { item ->
+                val code = item.fund_id ?: return@mapNotNull null
+                val name = item.fund_nm ?: return@mapNotNull null
+                
                 FundDataEntity(
-                    code = item.code,
-                    name = item.name,
+                    code = code,
+                    name = name,
                     type = "QDII",
                     price = item.price,
-                    changePct = item.changePct,
-                    premiumRate = item.premiumRate,
-                    navT1 = item.navT1,
-                    navEstimate = item.navEstimate,
-                    purchaseStatus = item.purchaseStatus,
-                    purchaseLimit = item.purchaseLimit,
-                    volume = item.volume,
-                    amount = item.amount,
-                    source = item.source ?: "backend",
+                    changePct = item.getChangePct(),
+                    premiumRate = item.getPremiumRate(),
+                    navT1 = item.nav,
+                    navEstimate = null,
+                    purchaseStatus = null,
+                    purchaseLimit = null,
+                    volume = item.fund_vol,
+                    amount = item.fund_amt,
+                    source = "jisilu",
                     updateTime = System.currentTimeMillis()
                 )
             }
+            
+            println("Successfully parsed ${funds.size} QDII funds")
+            if (funds.isEmpty()) getDemoData("QDII") else funds
+            
         } catch (e: Exception) {
             println("fetchQDII error: ${e.message}")
             e.printStackTrace()
-            getDemoData("QDII")  // 出错时返回演示数据
+            getDemoData("QDII")
         }
     }
     
     private suspend fun fetchLOF(): List<FundDataEntity> {
         return try {
-            println("Fetching LOF data from backend: $backendUrl")
-            val response = backendApi.getLOFRanking()
+            println("Fetching LOF data from eastmoney...")
+            val response = eastmoneyApi.getLOFList()
             
             if (!response.isSuccessful) {
                 println("LOF API failed: ${response.code()} - ${response.message()}")
-                return getDemoData("LOF")  // 返回演示数据
+                return getDemoData("LOF")
             }
             
             val body = response.body()
-            if (body == null || body.items.isEmpty()) {
+            if (body.isNullOrEmpty()) {
                 println("LOF API returned empty body, using demo data")
                 return getDemoData("LOF")
             }
             
-            println("LOF API success, found ${body.items.size} items")
+            val funds = parseLOFResponse(body)
+            println("Successfully parsed ${funds.size} LOF funds")
             
-            body.items.map { item ->
-                FundDataEntity(
-                    code = item.code,
-                    name = item.name,
-                    type = "LOF",
-                    price = item.price,
-                    changePct = item.changePct,
-                    premiumRate = item.premiumRate,
-                    navT1 = item.navT1,
-                    navEstimate = item.navEstimate,
-                    purchaseStatus = item.purchaseStatus,
-                    purchaseLimit = item.purchaseLimit,
-                    volume = item.volume,
-                    amount = item.amount,
-                    source = item.source ?: "backend",
-                    updateTime = System.currentTimeMillis()
-                )
-            }
+            if (funds.isEmpty()) getDemoData("LOF") else funds
+            
         } catch (e: Exception) {
             println("fetchLOF error: ${e.message}")
             e.printStackTrace()
-            getDemoData("LOF")  // 出错时返回演示数据
+            getDemoData("LOF")
         }
     }
     
+    private fun parseLOFResponse(html: String): List<FundDataEntity> {
+        val funds = mutableListOf<FundDataEntity>()
+        
+        try {
+            // 提取 datas 数组
+            val dataPattern = """datas:(\[.*?\])""".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val match = dataPattern.find(html) ?: run {
+                println("Could not find datas pattern in LOF response")
+                return funds
+            }
+            
+            val dataArray = match.groupValues[1]
+            
+            // 解析数组中的每一项
+            val itemPattern = """"([^"]*)"""".toRegex()
+            val items = itemPattern.findAll(dataArray).map { it.groupValues[1] }.toList()
+            
+            var i = 0
+            while (i + 22 < items.size) {
+                val code = items[i]
+                val name = items[i + 1]
+                
+                if (code.length == 6 && code.all { it.isDigit() }) {
+                    funds.add(FundDataEntity(
+                        code = code,
+                        name = name,
+                        type = "LOF",
+                        price = items[i + 3].toDoubleOrNull(),
+                        changePct = items[i + 4].replace("%", "").toDoubleOrNull(),
+                        premiumRate = items[i + 15].replace("%", "").toDoubleOrNull(),
+                        navT1 = items[i + 6].toDoubleOrNull(),
+                        navEstimate = items[i + 17].toDoubleOrNull(),
+                        purchaseStatus = null,
+                        purchaseLimit = null,
+                        volume = items[i + 9].toDoubleOrNull(),
+                        amount = items[i + 10].toDoubleOrNull(),
+                        source = "eastmoney",
+                        updateTime = System.currentTimeMillis()
+                    ))
+                }
+                i += 23
+            }
+        } catch (e: Exception) {
+            println("parseLOFResponse error: ${e.message}")
+        }
+        
+        return funds
+    }
+    
     private fun getDemoData(type: String): List<FundDataEntity> {
-        // 返回演示数据用于测试
         println("Generating demo data for $type")
         return if (type == "QDII") {
             listOf(
