@@ -61,17 +61,29 @@ class FundRepository @Inject constructor(
 
     suspend fun getFundByCode(code: String): FundDataEntity? = fundDataDao.getFundByCode(code)
 
-    suspend fun refreshAllData(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun refreshAllData(): Result<String> = withContext(Dispatchers.IO) {
         try {
             println("Starting refreshAllData...")
-            val qdiiResult = fetchQDII()
-            val lofResult = fetchLOF()
-            
-            println("QDII fetched: ${qdiiResult.size}, LOF fetched: ${lofResult.size}")
-            
+            val errors = mutableListOf<String>()
             val allFunds = mutableListOf<FundDataEntity>()
-            allFunds.addAll(qdiiResult)
-            allFunds.addAll(lofResult)
+            
+            try {
+                val qdiiResult = fetchQDII()
+                println("QDII fetched: ${qdiiResult.size}")
+                allFunds.addAll(qdiiResult)
+            } catch (e: Exception) {
+                errors.add("QDII: ${e.message}")
+                println("QDII fetch failed: ${e.message}")
+            }
+            
+            try {
+                val lofResult = fetchLOF()
+                println("LOF fetched: ${lofResult.size}")
+                allFunds.addAll(lofResult)
+            } catch (e: Exception) {
+                errors.add("LOF: ${e.message}")
+                println("LOF fetch failed: ${e.message}")
+            }
             
             println("Total funds to save: ${allFunds.size}")
             
@@ -81,8 +93,13 @@ class FundRepository @Inject constructor(
                 savePremiumHistory(allFunds)
             }
             
-            println("refreshAllData completed successfully")
-            Result.success(Unit)
+            if (errors.isNotEmpty() && allFunds.isEmpty()) {
+                Result.failure(Exception("获取数据失败:\n${errors.joinToString("\n")}"))
+            } else if (errors.isNotEmpty()) {
+                Result.success("部分成功，${allFunds.size}条数据。错误: ${errors.joinToString(", ")}")
+            } else {
+                Result.success("成功获取 ${allFunds.size} 条数据")
+            }
         } catch (e: Exception) {
             println("refreshAllData error: ${e.message}")
             e.printStackTrace()
@@ -91,208 +108,106 @@ class FundRepository @Inject constructor(
     }
 
     private suspend fun fetchQDII(): List<FundDataEntity> {
-        return try {
-            println("Fetching QDII data from jisilu...")
-            val response = jisiluApi.getQDIIList()
-            
-            if (!response.isSuccessful) {
-                println("QDII API failed: ${response.code()} - ${response.message()}")
-                return getDemoData("QDII")
-            }
-            
-            val body = response.body()
-            if (body == null || body.rows.isEmpty()) {
-                println("QDII API returned empty body, using demo data")
-                return getDemoData("QDII")
-            }
-            
-            println("QDII API success, found ${body.rows.size} items")
-            
-val funds = body.rows.mapNotNull { item ->
-                val code = item.fundId ?: return@mapNotNull null
-                val name = item.fundNm ?: return@mapNotNull null
-                
-                FundDataEntity(
-                    code = code,
-                    name = name,
-                    type = "QDII",
-                    price = item.price,
-                    changePct = item.getChangePct(),
-                    premiumRate = item.getPremiumRate(),
-                    navT1 = item.nav,
-                    navEstimate = null,
-                    purchaseStatus = null,
-                    purchaseLimit = null,
-                    volume = item.fundVol,
-                    amount = item.fundAmt,
-                    source = "jisilu",
-                    updateTime = System.currentTimeMillis()
-                )
-            }
-            
-            println("Successfully parsed ${funds.size} QDII funds")
-            if (funds.isEmpty()) getDemoData("QDII") else funds
-            
-        } catch (e: Exception) {
-            println("fetchQDII error: ${e.message}")
-            e.printStackTrace()
-            getDemoData("QDII")
+        println("Fetching QDII data from jisilu...")
+        val response = jisiluApi.getQDIIList()
+        
+        if (!response.isSuccessful) {
+            throw Exception("API失败: ${response.code()} ${response.message()}")
         }
+        
+        val body = response.body()
+            ?: throw Exception("响应体为空")
+        
+        if (body.rows.isEmpty()) {
+            throw Exception("数据为空")
+        }
+        
+        println("QDII API success, found ${body.rows.size} items")
+        
+        val funds = body.rows.mapNotNull { item ->
+            val code = item.fundId ?: return@mapNotNull null
+            val name = item.fundNm ?: return@mapNotNull null
+            
+            FundDataEntity(
+                code = code,
+                name = name,
+                type = "QDII",
+                price = item.price,
+                changePct = item.getChangePct(),
+                premiumRate = item.getPremiumRate(),
+                navT1 = item.nav,
+                navEstimate = null,
+                purchaseStatus = null,
+                purchaseLimit = null,
+                volume = item.fundVol,
+                amount = item.fundAmt,
+                source = "jisilu",
+                updateTime = System.currentTimeMillis()
+            )
+        }
+        
+        println("Successfully parsed ${funds.size} QDII funds")
+        funds
     }
     
     private suspend fun fetchLOF(): List<FundDataEntity> {
-        return try {
-            println("Fetching LOF data from eastmoney...")
-            val response = eastmoneyApi.getLOFList()
-            
-            if (!response.isSuccessful) {
-                println("LOF API failed: ${response.code()} - ${response.message()}")
-                return getDemoData("LOF")
-            }
-            
-            val body = response.body()
-            if (body.isNullOrEmpty()) {
-                println("LOF API returned empty body, using demo data")
-                return getDemoData("LOF")
-            }
-            
-            val funds = parseLOFResponse(body)
-            println("Successfully parsed ${funds.size} LOF funds")
-            
-            if (funds.isEmpty()) getDemoData("LOF") else funds
-            
-        } catch (e: Exception) {
-            println("fetchLOF error: ${e.message}")
-            e.printStackTrace()
-            getDemoData("LOF")
+        println("Fetching LOF data from eastmoney...")
+        val response = eastmoneyApi.getLOFList()
+        
+        if (!response.isSuccessful) {
+            throw Exception("API失败: ${response.code()} ${response.message()}")
         }
+        
+        val body = response.body()
+            ?: throw Exception("响应体为空")
+        
+        if (body.isEmpty()) {
+            throw Exception("数据为空")
+        }
+        
+        val funds = parseLOFResponse(body)
+        println("Successfully parsed ${funds.size} LOF funds")
+        funds
     }
     
     private fun parseLOFResponse(html: String): List<FundDataEntity> {
         val funds = mutableListOf<FundDataEntity>()
         
-        try {
-            // 提取 datas 数组
-            val dataPattern = """datas:(\[.*?\])""".toRegex(RegexOption.DOT_MATCHES_ALL)
-            val match = dataPattern.find(html) ?: run {
-                println("Could not find datas pattern in LOF response")
-                return funds
+        val dataPattern = """datas:(\[.*?\])""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val match = dataPattern.find(html)
+            ?: throw Exception("无法解析数据格式")
+        
+        val dataArray = match.groupValues[1]
+        val itemPattern = """"([^"]*)"""".toRegex()
+        val items = itemPattern.findAll(dataArray).map { it.groupValues[1] }.toList()
+        
+        var i = 0
+        while (i + 22 < items.size) {
+            val code = items[i]
+            val name = items[i + 1]
+            
+            if (code.length == 6 && code.all { it.isDigit() }) {
+                funds.add(FundDataEntity(
+                    code = code,
+                    name = name,
+                    type = "LOF",
+                    price = items[i + 3].toDoubleOrNull(),
+                    changePct = items[i + 4].replace("%", "").toDoubleOrNull(),
+                    premiumRate = items[i + 15].replace("%", "").toDoubleOrNull(),
+                    navT1 = items[i + 6].toDoubleOrNull(),
+                    navEstimate = items[i + 17].toDoubleOrNull(),
+                    purchaseStatus = null,
+                    purchaseLimit = null,
+                    volume = items[i + 9].toDoubleOrNull(),
+                    amount = items[i + 10].toDoubleOrNull(),
+                    source = "eastmoney",
+                    updateTime = System.currentTimeMillis()
+                ))
             }
-            
-            val dataArray = match.groupValues[1]
-            
-            // 解析数组中的每一项
-            val itemPattern = """"([^"]*)"""".toRegex()
-            val items = itemPattern.findAll(dataArray).map { it.groupValues[1] }.toList()
-            
-            var i = 0
-            while (i + 22 < items.size) {
-                val code = items[i]
-                val name = items[i + 1]
-                
-                if (code.length == 6 && code.all { it.isDigit() }) {
-                    funds.add(FundDataEntity(
-                        code = code,
-                        name = name,
-                        type = "LOF",
-                        price = items[i + 3].toDoubleOrNull(),
-                        changePct = items[i + 4].replace("%", "").toDoubleOrNull(),
-                        premiumRate = items[i + 15].replace("%", "").toDoubleOrNull(),
-                        navT1 = items[i + 6].toDoubleOrNull(),
-                        navEstimate = items[i + 17].toDoubleOrNull(),
-                        purchaseStatus = null,
-                        purchaseLimit = null,
-                        volume = items[i + 9].toDoubleOrNull(),
-                        amount = items[i + 10].toDoubleOrNull(),
-                        source = "eastmoney",
-                        updateTime = System.currentTimeMillis()
-                    ))
-                }
-                i += 23
-            }
-        } catch (e: Exception) {
-            println("parseLOFResponse error: ${e.message}")
+            i += 23
         }
         
-        return funds
-    }
-    
-    private fun getDemoData(type: String): List<FundDataEntity> {
-        println("Generating demo data for $type")
-        return if (type == "QDII") {
-            listOf(
-                FundDataEntity(
-                    code = "159941",
-                    name = "纳指ETF",
-                    type = "QDII",
-                    price = 1.234,
-                    changePct = 2.56,
-                    premiumRate = 3.21,
-                    navT1 = 1.195,
-                    purchaseStatus = "开放",
-                    purchaseLimit = 100.0,
-                    source = "demo",
-                    updateTime = System.currentTimeMillis()
-                ),
-                FundDataEntity(
-                    code = "513100",
-                    name = "纳指100ETF",
-                    type = "QDII",
-                    price = 1.567,
-                    changePct = -1.23,
-                    premiumRate = 2.45,
-                    navT1 = 1.529,
-                    purchaseStatus = "开放",
-                    purchaseLimit = 50.0,
-                    source = "demo",
-                    updateTime = System.currentTimeMillis()
-                ),
-                FundDataEntity(
-                    code = "159920",
-                    name = "恒生ETF",
-                    type = "QDII",
-                    price = 0.987,
-                    changePct = 0.85,
-                    premiumRate = 1.67,
-                    navT1 = 0.970,
-                    purchaseStatus = "暂停",
-                    purchaseLimit = null,
-                    source = "demo",
-                    updateTime = System.currentTimeMillis()
-                )
-            )
-        } else {
-            listOf(
-                FundDataEntity(
-                    code = "161725",
-                    name = "招商白酒A",
-                    type = "LOF",
-                    price = 1.234,
-                    changePct = 1.23,
-                    premiumRate = 0.89,
-                    navT1 = 1.223,
-                    navEstimate = 1.229,
-                    purchaseStatus = "开放",
-                    purchaseLimit = 10.0,
-                    source = "demo",
-                    updateTime = System.currentTimeMillis()
-                ),
-                FundDataEntity(
-                    code = "163406",
-                    name = "兴全合润",
-                    type = "LOF",
-                    price = 2.345,
-                    changePct = -0.56,
-                    premiumRate = -0.34,
-                    navT1 = 2.353,
-                    navEstimate = 2.351,
-                    purchaseStatus = "开放",
-                    purchaseLimit = null,
-                    source = "demo",
-                    updateTime = System.currentTimeMillis()
-                )
-            )
-        }
+        funds
     }
 
     private suspend fun savePremiumHistory(funds: List<FundDataEntity>) {
