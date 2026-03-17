@@ -74,59 +74,101 @@ class FundRepository @Inject constructor(
 
     suspend fun refreshAllData(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            println("Starting refreshAllData...")
             val qdiiResult = fetchQDII()
             val lofResult = fetchLOF()
+            
+            println("QDII fetched: ${qdiiResult.size}, LOF fetched: ${lofResult.size}")
             
             val allFunds = mutableListOf<FundDataEntity>()
             allFunds.addAll(qdiiResult)
             allFunds.addAll(lofResult)
+            
+            println("Total funds to save: ${allFunds.size}")
             
             fundDataDao.deleteAll()
             fundDataDao.insertFunds(allFunds)
             
             savePremiumHistory(allFunds)
             
+            println("refreshAllData completed successfully")
             Result.success(Unit)
         } catch (e: Exception) {
+            println("refreshAllData error: ${e.message}")
+            e.printStackTrace()
             Result.failure(e)
         }
     }
 
     private suspend fun fetchQDII(): List<FundDataEntity> {
-        val response = jisiluApi.getQDIIList()
-        if (!response.isSuccessful) return emptyList()
-        
-        val body = response.body() ?: return emptyList()
-        
-        return body.rows.mapNotNull { item ->
-            val code = item.fundId ?: return@mapNotNull null
-            val name = item.fundNm ?: return@mapNotNull null
+        return try {
+            val response = jisiluApi.getQDIIList()
+            if (!response.isSuccessful) {
+                println("QDII API failed: ${response.code()} - ${response.message()}")
+                return emptyList()
+            }
             
-            FundDataEntity(
-                code = code,
-                name = name,
-                type = "QDII",
-                price = item.price,
-                changePct = item.getChangePct(),
-                premiumRate = item.getPremiumRate(),
-                navT1 = item.nav,
-                navEstimate = null,
-                purchaseStatus = null,
-                purchaseLimit = null,
-                volume = item.fundVol,
-                amount = item.fundAmt,
-                source = "jisilu",
-                updateTime = System.currentTimeMillis()
-            )
+            val body = response.body()
+            if (body == null) {
+                println("QDII API returned empty body")
+                return emptyList()
+            }
+            
+            println("QDII API success, found ${body.rows.size} items")
+            
+            val funds = body.rows.mapNotNull { item ->
+                val code = item.fundId ?: return@mapNotNull null
+                val name = item.fundNm ?: return@mapNotNull null
+                
+                FundDataEntity(
+                    code = code,
+                    name = name,
+                    type = "QDII",
+                    price = item.price,
+                    changePct = item.getChangePct(),
+                    premiumRate = item.getPremiumRate(),
+                    navT1 = item.nav,
+                    navEstimate = null,
+                    purchaseStatus = null,
+                    purchaseLimit = null,
+                    volume = item.fundVol,
+                    amount = item.fundAmt,
+                    source = "jisilu",
+                    updateTime = System.currentTimeMillis()
+                )
+            }
+            
+            println("Successfully parsed ${funds.size} QDII funds")
+            funds
+        } catch (e: Exception) {
+            println("fetchQDII error: ${e.message}")
+            e.printStackTrace()
+            emptyList()
         }
     }
 
     private suspend fun fetchLOF(): List<FundDataEntity> {
-        val response = eastmoneyApi.getLOFList()
-        if (!response.isSuccessful) return emptyList()
-        
-        val body = response.body() ?: return emptyList()
-        return parseLOFResponse(body)
+        return try {
+            val response = eastmoneyApi.getLOFList()
+            if (!response.isSuccessful) {
+                println("LOF API failed: ${response.code()} - ${response.message()}")
+                return emptyList()
+            }
+            
+            val body = response.body()
+            if (body == null) {
+                println("LOF API returned empty body")
+                return emptyList()
+            }
+            
+            val funds = parseLOFResponse(body)
+            println("Successfully parsed ${funds.size} LOF funds")
+            funds
+        } catch (e: Exception) {
+            println("fetchLOF error: ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
     }
 
     private fun parseLOFResponse(html: String): List<FundDataEntity> {
