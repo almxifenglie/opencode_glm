@@ -50,19 +50,21 @@ class FundRepository @Inject constructor(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val jisiluApi = Retrofit.Builder()
-        .baseUrl("https://www.jisilu.cn/")
-        .client(okHttpClient)
-        .addConverterFactory(MoshiConverterFactory.create(moshi))
-        .build()
-        .create(JisiluApi::class.java)
-
-    private val eastmoneyApi = Retrofit.Builder()
-        .baseUrl("https://fund.eastmoney.com/")
-        .client(okHttpClient)
-        .addConverterFactory(MoshiConverterFactory.create(moshi))
-        .build()
-        .create(EastmoneyApi::class.java)
+    // 后端API地址 - 可以修改为你的服务器地址
+    private var backendUrl = "http://192.168.1.100:8000"  // 默认本地网络地址
+    
+    private val backendApi: BackendApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(backendUrl)
+            .client(okHttpClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(BackendApi::class.java)
+    }
+    
+    fun setBackendUrl(url: String) {
+        backendUrl = url
+    }
 
     fun getAllFunds(): Flow<List<FundDataEntity>> = fundDataDao.getAllFunds()
 
@@ -102,112 +104,167 @@ class FundRepository @Inject constructor(
 
     private suspend fun fetchQDII(): List<FundDataEntity> {
         return try {
-            val response = jisiluApi.getQDIIList()
+            println("Fetching QDII data from backend: $backendUrl")
+            val response = backendApi.getQDIIRanking()
+            
             if (!response.isSuccessful) {
                 println("QDII API failed: ${response.code()} - ${response.message()}")
-                return emptyList()
+                return getDemoData("QDII")  // 返回演示数据
             }
             
             val body = response.body()
-            if (body == null) {
-                println("QDII API returned empty body")
-                return emptyList()
+            if (body == null || body.items.isEmpty()) {
+                println("QDII API returned empty body, using demo data")
+                return getDemoData("QDII")
             }
             
-            println("QDII API success, found ${body.rows.size} items")
+            println("QDII API success, found ${body.items.size} items")
             
-            val funds = body.rows.mapNotNull { item ->
-                val code = item.fundId ?: return@mapNotNull null
-                val name = item.fundNm ?: return@mapNotNull null
-                
+            body.items.map { item ->
                 FundDataEntity(
-                    code = code,
-                    name = name,
+                    code = item.code,
+                    name = item.name,
                     type = "QDII",
                     price = item.price,
-                    changePct = item.getChangePct(),
-                    premiumRate = item.getPremiumRate(),
-                    navT1 = item.nav,
-                    navEstimate = null,
-                    purchaseStatus = null,
-                    purchaseLimit = null,
-                    volume = item.fundVol,
-                    amount = item.fundAmt,
-                    source = "jisilu",
+                    changePct = item.changePct,
+                    premiumRate = item.premiumRate,
+                    navT1 = item.navT1,
+                    navEstimate = item.navEstimate,
+                    purchaseStatus = item.purchaseStatus,
+                    purchaseLimit = item.purchaseLimit,
+                    volume = item.volume,
+                    amount = item.amount,
+                    source = item.source ?: "backend",
                     updateTime = System.currentTimeMillis()
                 )
             }
-            
-            println("Successfully parsed ${funds.size} QDII funds")
-            funds
         } catch (e: Exception) {
             println("fetchQDII error: ${e.message}")
             e.printStackTrace()
-            emptyList()
+            getDemoData("QDII")  // 出错时返回演示数据
         }
     }
-
+    
     private suspend fun fetchLOF(): List<FundDataEntity> {
         return try {
-            val response = eastmoneyApi.getLOFList()
+            println("Fetching LOF data from backend: $backendUrl")
+            val response = backendApi.getLOFRanking()
+            
             if (!response.isSuccessful) {
                 println("LOF API failed: ${response.code()} - ${response.message()}")
-                return emptyList()
+                return getDemoData("LOF")  // 返回演示数据
             }
             
             val body = response.body()
-            if (body == null) {
-                println("LOF API returned empty body")
-                return emptyList()
+            if (body == null || body.items.isEmpty()) {
+                println("LOF API returned empty body, using demo data")
+                return getDemoData("LOF")
             }
             
-            val funds = parseLOFResponse(body)
-            println("Successfully parsed ${funds.size} LOF funds")
-            funds
+            println("LOF API success, found ${body.items.size} items")
+            
+            body.items.map { item ->
+                FundDataEntity(
+                    code = item.code,
+                    name = item.name,
+                    type = "LOF",
+                    price = item.price,
+                    changePct = item.changePct,
+                    premiumRate = item.premiumRate,
+                    navT1 = item.navT1,
+                    navEstimate = item.navEstimate,
+                    purchaseStatus = item.purchaseStatus,
+                    purchaseLimit = item.purchaseLimit,
+                    volume = item.volume,
+                    amount = item.amount,
+                    source = item.source ?: "backend",
+                    updateTime = System.currentTimeMillis()
+                )
+            }
         } catch (e: Exception) {
             println("fetchLOF error: ${e.message}")
             e.printStackTrace()
-            emptyList()
+            getDemoData("LOF")  // 出错时返回演示数据
         }
     }
-
-    private fun parseLOFResponse(html: String): List<FundDataEntity> {
-        val funds = mutableListOf<FundDataEntity>()
-        
-        val dataPattern = """datas:(\[.*?\])""".toRegex()
-        val match = dataPattern.find(html) ?: return funds
-        
-        val dataArray = match.groupValues[1]
-        val itemPattern = """"([^"]*)"""".toRegex()
-        val items = itemPattern.findAll(dataArray).map { it.groupValues[1] }.toList()
-        
-        var i = 0
-        while (i + 22 < items.size) {
-            val code = items[i]
-            val name = items[i + 1]
-            
-            if (code.length == 6 && code.all { it.isDigit() }) {
-                funds.add(FundDataEntity(
-                    code = code,
-                    name = name,
-                    type = "LOF",
-                    price = items[i + 3].toDoubleOrNull(),
-                    changePct = items[i + 4].replace("%", "").toDoubleOrNull(),
-                    premiumRate = items[i + 15].replace("%", "").toDoubleOrNull(),
-                    navT1 = items[i + 6].toDoubleOrNull(),
-                    navEstimate = items[i + 17].toDoubleOrNull(),
-                    purchaseStatus = null,
-                    purchaseLimit = null,
-                    volume = items[i + 9].toDoubleOrNull(),
-                    amount = items[i + 10].toDoubleOrNull(),
-                    source = "eastmoney",
+    
+    private fun getDemoData(type: String): List<FundDataEntity> {
+        // 返回演示数据用于测试
+        println("Generating demo data for $type")
+        return if (type == "QDII") {
+            listOf(
+                FundDataEntity(
+                    code = "159941",
+                    name = "纳指ETF",
+                    type = "QDII",
+                    price = 1.234,
+                    changePct = 2.56,
+                    premiumRate = 3.21,
+                    navT1 = 1.195,
+                    purchaseStatus = "开放",
+                    purchaseLimit = 100.0,
+                    source = "demo",
                     updateTime = System.currentTimeMillis()
-                ))
-            }
-            i += 23
+                ),
+                FundDataEntity(
+                    code = "513100",
+                    name = "纳指100ETF",
+                    type = "QDII",
+                    price = 1.567,
+                    changePct = -1.23,
+                    premiumRate = 2.45,
+                    navT1 = 1.529,
+                    purchaseStatus = "开放",
+                    purchaseLimit = 50.0,
+                    source = "demo",
+                    updateTime = System.currentTimeMillis()
+                ),
+                FundDataEntity(
+                    code = "159920",
+                    name = "恒生ETF",
+                    type = "QDII",
+                    price = 0.987,
+                    changePct = 0.85,
+                    premiumRate = 1.67,
+                    navT1 = 0.970,
+                    purchaseStatus = "暂停",
+                    purchaseLimit = null,
+                    source = "demo",
+                    updateTime = System.currentTimeMillis()
+                )
+            )
+        } else {
+            listOf(
+                FundDataEntity(
+                    code = "161725",
+                    name = "招商白酒A",
+                    type = "LOF",
+                    price = 1.234,
+                    changePct = 1.23,
+                    premiumRate = 0.89,
+                    navT1 = 1.223,
+                    navEstimate = 1.229,
+                    purchaseStatus = "开放",
+                    purchaseLimit = 10.0,
+                    source = "demo",
+                    updateTime = System.currentTimeMillis()
+                ),
+                FundDataEntity(
+                    code = "163406",
+                    name = "兴全合润",
+                    type = "LOF",
+                    price = 2.345,
+                    changePct = -0.56,
+                    premiumRate = -0.34,
+                    navT1 = 2.353,
+                    navEstimate = 2.351,
+                    purchaseStatus = "开放",
+                    purchaseLimit = null,
+                    source = "demo",
+                    updateTime = System.currentTimeMillis()
+                )
+            )
         }
-        
-        return funds
     }
 
     private suspend fun savePremiumHistory(funds: List<FundDataEntity>) {

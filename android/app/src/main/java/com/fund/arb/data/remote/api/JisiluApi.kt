@@ -5,11 +5,6 @@ import retrofit2.Response
 import retrofit2.http.*
 
 interface JisiluApi {
-    @FormUrlEncoded
-    @POST("https://www.jisilu.cn/data/qdii/qdii_list/")
-    suspend fun getQDIIList(
-        @Field("fund_type") fundType: String = "QDII",
-        @Field("rp") rp: Int = 50,
-        @Field("page") page: Int = 1
-    ): Response<QDIIResponse>
+    // 暂时禁用直接调用第三方API
+    // 改用我们自己的后端API
 }
