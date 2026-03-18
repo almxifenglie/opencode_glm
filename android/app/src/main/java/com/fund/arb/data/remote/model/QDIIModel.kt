@@ -15,18 +15,16 @@ data class QDIIItem(
     val fundId: String? get() = cell?.fundId
     val fundNm: String? get() = cell?.fundNm
     val price: Double? get() = cell?.price
-    val increaseRt: String? get() = cell?.increaseRt
-    val premiumRt: Double? get() = cell?.navDiscountRt
     val nav: Double? get() = cell?.fundNav
     val fundVol: Double? get() = cell?.volume?.toDoubleOrNull()
-    val fundAmt: Double? get() = cell?.amount?.toDoubleOrNull()
+    val fundAmt: Double? get() = cell?.amount?.toDouble()
     
     fun getChangePct(): Double? {
-        return increaseRt?.replace("%", "")?.toDoubleOrNull()
+        return cell?.increaseRt?.replace("%", "")?.toDoubleOrNull()
     }
     
     fun getPremiumRate(): Double? {
-        return premiumRt
+        return cell?.navDiscountRt
     }
 }
 
@@ -39,5 +37,5 @@ data class QDIICell(
     @Json(name = "nav_discount_rt") val navDiscountRt: Double?,
     @Json(name = "fund_nav") val fundNav: Double?,
     val volume: String?,
-    val amount: Double?
+    val amount: Long?
 )
